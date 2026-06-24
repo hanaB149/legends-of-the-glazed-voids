@@ -1,4 +1,5 @@
 import { useGameStore } from '../engine/store.js';
+import { Audio } from '../audio/audio.js';
 
 export function EndingOverlay() {
   const gameEnding = useGameStore(s => s.gameEnding);
@@ -8,45 +9,50 @@ export function EndingOverlay() {
 
   const endings = {
     victory: {
-      title: 'Glazed Victory',
-      subtitle: 'Reality Saved',
-      desc: 'The portal opens. You and Glaze escape as the U.S.V. Old-Fashioned collapses into the void. He grudgingly admits you "weren\'t completely useless."',
+      title: 'GLAZED VICTORY',
+      subtitle: 'REALITY SAVED',
+      desc: 'THE PORTAL OPENS. YOU AND GLAZE ESCAPE AS THE U.S.V. OLD-FASHIONED COLLAPSES INTO THE VOID. HE GRUDGINGLY ADMITS YOU "WEREN\'T COMPLETELY USELESS."',
       color: '#00C8FF',
-      icon: '🏆',
+      icon: 'W',
     },
     hull_lost: {
-      title: 'Hull Lost',
-      subtitle: 'The Rifts Win',
-      desc: 'The ship\'s integrity gives out. Interdimensional energy tears through every deck. Glaze\'s last message fades to static. The Bakery goes silent.',
+      title: 'HULL LOST',
+      subtitle: 'THE RIFTS WIN',
+      desc: 'THE SHIP\'S INTEGRITY GIVES OUT. INTERDIMENSIONAL ENERGY TEARS THROUGH EVERY DECK. THE BAKERY GOES SILENT.',
       color: '#FF4444',
-      icon: '💀',
+      icon: 'X',
     },
     mutiny: {
-      title: 'Mutiny',
-      subtitle: 'Glaze Breaks',
-      desc: 'Captain Glaze has had enough of your voice. He severs the link, locks the comms, and goes rogue. "I\'m the captain now. Find your own ship."',
+      title: 'MUTINY',
+      subtitle: 'GLAZE BREAKS',
+      desc: 'CAPTAIN GLAZE SEVERS THE LINK. "I\'M THE CAPTAIN NOW. FIND YOUR OWN SHIP." THE COMMS DIE.',
       color: '#FF8800',
-      icon: '🏴',
+      icon: '!',
     },
     supreme_glaze: {
-      title: 'Supreme Glaze',
-      subtitle: 'The True Ending',
-      desc: 'With absolute trust and a final offering, Captain Glaze merges with Vermious the Glazeworm. He becomes the Worm Lord — a new entity straddling dimensions. Reality trembles. The Bakery watches in awe.',
+      title: 'SUPREME GLAZE',
+      subtitle: 'THE TRUE ENDING',
+      desc: 'WITH ABSOLUTE TRUST, GLAZE MERGES WITH VERMIOUS THE GLAZEWORM. HE BECOMES THE WORM LORD. REALITY TREMBLES.',
       color: '#FF00FF',
-      icon: '👑',
+      icon: '*',
     },
   };
 
   const end = endings[gameEnding] || endings.victory;
 
+  const handleRestart = () => {
+    Audio.stopBGM();
+    startGame();
+  };
+
   return (
-    <div className="ending-overlay" style={{ '--end-color': end.color }}>
-      <div className="ending-content">
-        <div className="ending-icon">{end.icon}</div>
+    <div className="ending-overlay pixel-ending" style={{ '--end-color': end.color }}>
+      <div className="ending-content pixel-ending-content">
+        <div className="ending-icon" style={{ color: end.color }}>{end.icon}</div>
         <h2 className="ending-title" style={{ color: end.color }}>{end.title}</h2>
         <div className="ending-subtitle">{end.subtitle}</div>
         <p className="ending-desc">{end.desc}</p>
-        <button className="restart-btn" onClick={startGame}>Play Again</button>
+        <button className="pixel-btn" onClick={handleRestart}>PLAY AGAIN</button>
       </div>
     </div>
   );

@@ -1,30 +1,35 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { useGameStore } from '../engine/store.js';
 import { getMoodRead } from '../engine/compliance.js';
 import { getRoom } from '../data/rooms.js';
-import { SceneSvg } from './SceneSvg.jsx';
-import { GlazePortrait } from './GlazePortrait.jsx';
+import { Audio } from '../audio/audio.js';
+import { renderScene } from './PixelScene.js';
 
 const SUGGESTIONS = {
   bridge: [
-    { text: 'Move to the hatch, Captain', icon: '🎯', appeal: 'command' },
-    { text: 'You\'re the only one who can do this', icon: '🌟', appeal: 'flatter' },
-    { text: 'It\'s safe, I\'ve got eyes on the whole corridor', icon: '🛡️', appeal: 'reassure' },
+    { text: 'Move to the hatch, Captain', icon: '\u{1F3AF}', appeal: 'command' },
+    { text: 'You\'re the only one who can do this', icon: '\u{1F31F}', appeal: 'flatter' },
+    { text: 'It\'s safe, I\'ve got eyes on everything', icon: '\u{1F6E1}', appeal: 'reassure' },
   ],
   glazing_bay: [
-    { text: 'Grab the Glaze Core for me', icon: '🎯', appeal: 'command' },
-    { text: 'There\'s a doughnut in it for you', icon: '🍩', appeal: 'bribe' },
-    { text: 'The cat is asleep. You can do this quietly.', icon: '🤫', appeal: 'reassure' },
-    { text: 'You\'re the Captain. Act like it.', icon: '⚡', appeal: 'argue' },
+    { text: 'Grab the Glaze Core', icon: '\u{1F3AF}', appeal: 'command' },
+    { text: 'There\'s a doughnut in it for you', icon: '\u{1F369}', appeal: 'bribe' },
+    { text: 'The cat is asleep. Quietly does it.', icon: '\u{1F92B}', appeal: 'reassure' },
+    { text: 'You\'re the Captain. Act like it.', icon: '\u26A1', appeal: 'argue' },
   ],
   maw: [
-    { text: 'Seal the rift with a Glaze Core', icon: '🔮', appeal: 'command' },
-    { text: 'Feed Vermious the Void Cruller', icon: '🪱', appeal: 'command' },
-    { text: 'We\'re almost out of time, just do it!', icon: '⏰', appeal: 'argue' },
+    { text: 'Seal the rift with a Glaze Core', icon: '\u{1F52E}', appeal: 'command' },
+    { text: 'Feed Vermious the Void Cruller', icon: '\u{1FAB1}', appeal: 'command' },
+    { text: 'We\'re out of time, just do it!', icon: '\u23F0', appeal: 'argue' },
   ],
 };
 
 export function GameView() {
+  const canvasRef = useRef(null);
+  const animRef = useRef(null);
+  const frameRef = useRef(0);
+  const scrollRef = useRef(null);
+
   const messages = useGameStore(s => s.messages);
   const isProcessing = useGameStore(s => s.isProcessing);
   const gameEnding = useGameStore(s => s.gameEnding);
@@ -41,7 +46,7 @@ export function GameView() {
   const riftsIntensity = useGameStore(s => s.riftsIntensity);
 
   const [input, setInput] = useState('');
-  const scrollRef = useRef(null);
+  const [audioStarted, setAudioStarted] = useState(false);
 
   const mood = getMoodRead(gauges);
   const room = getRoom(roomId);
@@ -56,187 +61,218 @@ export function GameView() {
   const handleSubmit = (e) => {
     e.preventDefault();
     if (!input.trim() || isProcessing || gameEnding) return;
+    if (!audioStarted) {
+      Audio.init();
+      Audio.startBGM();
+      setAudioStarted(true);
+    }
+    Audio.sfx('blip');
     processTurn(input.trim());
     setInput('');
   };
 
   const handleSuggestion = (text) => {
     if (isProcessing || gameEnding) return;
+    if (!audioStarted) {
+      Audio.init();
+      Audio.startBGM();
+      setAudioStarted(true);
+    }
+    Audio.sfx('blip');
     processTurn(text);
   };
 
-  const shipBar = Math.max(0, Math.round(ship.integrity / 10));
+  const handleStartBGM = useCallback(() => {
+    Audio.init();
+    Audio.startBGM();
+    setAudioStarted(true);
+  }, []);
+
+  // Canvas animation loop
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+
+    function resize() {
+      const p = canvas.parentElement;
+      if (p) {
+        canvas.width = p.clientWidth;
+        canvas.height = p.clientHeight;
+      }
+    }
+    resize();
+    window.addEventListener('resize', resize);
+
+    function loop() {
+      frameRef.current++;
+      if (ctx && canvas.width > 0 && canvas.height > 0) {
+        renderScene(ctx, canvas.width, canvas.height, room, riftsIntensity, strayWoke, frameRef.current);
+      }
+      animRef.current = requestAnimationFrame(loop);
+    }
+    loop();
+
+    return () => {
+      window.removeEventListener('resize', resize);
+      if (animRef.current) cancelAnimationFrame(animRef.current);
+    };
+  }, [roomId, riftsIntensity, strayWoke, room]);
+
+  // Sound effects for game events
+  useEffect(() => {
+    if (!audioStarted) return;
+    if (flashMessage) {
+      if (flashMessage.includes('+1') || flashMessage.includes('sealed') || flashMessage.includes('opened')) {
+        Audio.sfx('success');
+      } else if (flashMessage.includes('Objection') || flashMessage.includes('Refused')) {
+        Audio.sfx('refuse');
+      } else if (flashMessage.includes('Stray woke')) {
+        Audio.sfx('danger');
+      } else if (flashMessage.includes('deal') || flashMessage.includes('doughnut')) {
+        Audio.sfx('bribe');
+      }
+    }
+  }, [flashMessage, audioStarted]);
+
+  // Endgame sounds
+  useEffect(() => {
+    if (!audioStarted || !gameEnding) return;
+    Audio.stopBGM();
+    if (gameEnding === 'victory') Audio.sfx('victory');
+    else if (gameEnding === 'supreme_glaze') Audio.sfx('secret');
+    else Audio.sfx('defeat');
+  }, [gameEnding, audioStarted]);
+
+  const handleRestart = () => {
+    Audio.stopBGM();
+    setAudioStarted(false);
+    startGame();
+  };
 
   return (
-    <div className="game-view">
-      {/* Top HUD */}
-      <div className="hud-bar">
-        <div className="hud-left">
-          <div className="hud-badge ship-name">U.S.V. Old-Fashioned</div>
-          <div className="hud-badge room-badge">{room?.name || 'Unknown'}</div>
-        </div>
-        <div className="hud-center">
-          <span className="hud-title">LEGENDS OF THE GLAZED VOIDS</span>
-        </div>
-        <div className="hud-right">
-          <div className="hud-stat">
-            <span className="hud-stat-icon">🍩</span>
-            <span className="hud-stat-value">{inventory.glazeCores}</span>
-          </div>
-          <div className="hud-stat">
-            <span className="hud-stat-icon">🥯</span>
-            <span className="hud-stat-value">{inventory.voidCrullers}</span>
-          </div>
-          <div className="hud-stat">
-            <div className={`integrity-dot ${ship.integrity > 50 ? 'safe' : ship.integrity > 25 ? 'warning' : 'danger'}`} />
-            <span className="hud-stat-value">{Math.round(ship.integrity)}%</span>
-          </div>
-        </div>
-      </div>
+    <div className="game-view" onClick={handleStartBGM}>
+      <div className="game-view-inner">
+        {/* Canvas scene (third-person view) */}
+        <div className="scene-container" style={{ position: 'relative', overflow: 'hidden' }}>
+          <canvas ref={canvasRef} className="pixel-canvas" />
 
-      {/* Main layout */}
-      <div className="game-main">
-        {/* Scene panel */}
-        <div className="scene-panel">
-          <SceneSvg room={room} riftsIntensity={riftsIntensity} strayWoke={strayWoke} />
-
-          {/* Flash message overlay */}
           {flashMessage && (
-            <div className="flash-overlay">
-              <div className="flash-text">{flashMessage}</div>
+            <div className="pixel-flash">
+              <span>{flashMessage}</span>
             </div>
           )}
 
-          {/* Glaze portrait overlay */}
-          <div className="portrait-overlay">
-            <GlazePortrait expression={glazeExpression} mood={mood} />
-            <div className={`mood-label mood-${mood.toLowerCase()}`}>{mood}</div>
-          </div>
+          {!audioStarted && (
+            <div className="click-to-play">
+              <span>CLICK TO START</span>
+            </div>
+          )}
+        </div>
 
-          {/* Room objective */}
-          <div className="objective-bar">
-            <span className="objective-icon">🎯</span>
-            <span className="objective-text">{room?.objective}</span>
+        {/* HUD overlay on scene */}
+        <div className="pixel-hud">
+          <div className="pixel-hud-top">
+            <div className="pixel-hud-left">
+              <span className="pixel-badge room-badge">&gt; {room?.name || 'UNKNOWN'}</span>
+              <span className="pixel-badge obj-badge">{room?.objective?.slice(0, 40) || ''}</span>
+            </div>
+            <div className="pixel-hud-right">
+              <span className="pixel-stat"><span className="pixel-icon">C</span> {inventory.glazeCores}</span>
+              <span className="pixel-stat"><span className="pixel-icon">V</span> {inventory.voidCrullers}</span>
+              <span className={`pixel-stat ${ship.integrity < 30 ? 'danger-text' : ''}`}>
+                HP {Math.round(ship.integrity)}%
+              </span>
+            </div>
           </div>
         </div>
 
-        {/* Chat panel */}
-        <div className="chat-panel">
-          <div className="chat-header">
-            <div className="chat-header-left">
-              <span className="comms-dot" />
-              <span className="comms-label">COMMS</span>
+        {/* Bottom panel: chat + gauges */}
+        <div className="pixel-bottom-panel">
+          {/* Gauge bar */}
+          <div className="pixel-gauges">
+            <div className="pixel-gauge">
+              <span className="g-label">TRUST</span>
+              <div className="g-track"><div className="g-fill g-trust" style={{ width: `${gauges.trust}%` }} /></div>
             </div>
-            <span className="callsign">Cruller → Glaze</span>
-          </div>
-
-          <div className="chat-messages" ref={scrollRef}>
-            {messages.map((msg, i) => (
-              <div key={i} className={`message message-${msg.role}`}>
-                <div className="message-bubble">
-                  {msg.role === 'system' && <div className="message-text system-text">{msg.text}</div>}
-                  {msg.role !== 'system' && <div className="message-text">{msg.text}</div>}
-                </div>
+            <div className="pixel-gauge">
+              <span className="g-label">COMP</span>
+              <div className="g-track"><div className="g-fill g-composure" style={{ width: `${gauges.composure}%` }} /></div>
+            </div>
+            <div className="pixel-gauge">
+              <span className="g-label">EGO</span>
+              <div className="g-track"><div className="g-fill g-ego" style={{ width: `${gauges.ego}%` }} /></div>
+            </div>
+            <div className="pixel-gauge">
+              <span className="g-label">HUNGER</span>
+              <div className="g-track"><div className="g-fill g-hunger" style={{ width: `${gauges.hunger}%` }} /></div>
+            </div>
+            <div className="pixel-gauge mood-gauge">
+              <span className="g-label">MOOD</span>
+              <span className={`mood-indicator mood-${mood.toLowerCase()}`}>{mood}</span>
+            </div>
+            {room?.hasStray && (
+              <div className="pixel-gauge">
+                <span className={`stray-tag ${strayWoke ? 'awake' : 'dormant'}`}>
+                  {strayWoke ? 'STRAY!' : 'SLEEP'}
+                </span>
               </div>
-            ))}
-            {isProcessing && (
-              <div className="message message-glaze">
-                <div className="message-bubble">
-                  <div className="typing-indicator">
-                    <span /><span /><span />
-                  </div>
-                </div>
+            )}
+            {roomCompleted && room?.nextRoom && (
+              <div className="pixel-gauge">
+                <span className="next-tag">{'>'} NEXT</span>
               </div>
             )}
           </div>
 
-          {/* Suggestion chips */}
-          {!gameEnding && !roomCompleted && suggestions.length > 0 && (
-            <div className="suggestion-strip">
-              {suggestions.map((s, i) => (
-                <button key={i} className="suggestion-chip" onClick={() => handleSuggestion(s.text)}
-                  disabled={isProcessing}>
-                  <span className="suggestion-icon">{s.icon}</span>
-                  <span className="suggestion-text">{s.text}</span>
-                </button>
+          {/* Chat */}
+          <div className="pixel-chat">
+            <div className="pixel-chat-messages" ref={scrollRef}>
+              {messages.map((msg, i) => (
+                <div key={i} className={`pixel-msg pixel-msg-${msg.role}`}>
+                  {msg.role === 'player' && <>&gt; {msg.text}</>}
+                  {msg.role === 'glaze' && <span className="glaze-text">{msg.text}</span>}
+                  {msg.role === 'system' && <span className="sys-text">{msg.text}</span>}
+                </div>
               ))}
+              {isProcessing && (
+                <div className="pixel-msg pixel-msg-glaze">
+                  <span className="glaze-text typing-dots"><span/><span/><span/></span>
+                </div>
+              )}
             </div>
-          )}
 
-          {!gameEnding ? (
-            <form className="chat-input" onSubmit={handleSubmit}>
-              <input
-                type="text"
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                placeholder="Type your message to Captain Glaze..."
-                disabled={isProcessing}
-                autoFocus
-              />
-              <button type="submit" disabled={isProcessing || !input.trim()}>
-                Send
-              </button>
-            </form>
-          ) : (
-            <div className="game-over-actions">
-              <button className="restart-btn" onClick={startGame}>Play Again</button>
-            </div>
-          )}
+            {!gameEnding && !roomCompleted && suggestions.length > 0 && (
+              <div className="pixel-suggestions">
+                {suggestions.map((s, i) => (
+                  <button key={i} className="pixel-chip" onClick={() => handleSuggestion(s.text)} disabled={isProcessing}>
+                    {s.icon} {s.text}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {!gameEnding ? (
+              <form className="pixel-input-row" onSubmit={handleSubmit}>
+                <span className="prompt-symbol">{'>'}</span>
+                <input
+                  type="text"
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  placeholder="TYPE MESSAGE..."
+                  disabled={isProcessing}
+                  autoFocus
+                />
+                <button type="submit" disabled={isProcessing || !input.trim()}>SEND</button>
+              </form>
+            ) : (
+              <div className="pixel-restart">
+                <button className="pixel-btn" onClick={handleRestart}>PLAY AGAIN</button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
-
-      {/* Bottom gauge bar */}
-      {!gameEnding && (
-        <div className="gauge-bar">
-          <div className="gauge-item">
-            <span className="gauge-label">Trust</span>
-            <div className="gauge-track">
-              <div className="gauge-fill trust-fill" style={{ width: `${gauges.trust}%` }} />
-            </div>
-            <span className="gauge-value">{gauges.trust}%</span>
-          </div>
-          <div className="gauge-item">
-            <span className="gauge-label">Composure</span>
-            <div className="gauge-track">
-              <div className="gauge-fill composure-fill" style={{ width: `${gauges.composure}%` }} />
-            </div>
-            <span className="gauge-value">{gauges.composure}%</span>
-          </div>
-          <div className="gauge-item">
-            <span className="gauge-label">Ego</span>
-            <div className="gauge-track">
-              <div className="gauge-fill ego-fill" style={{ width: `${gauges.ego}%` }} />
-            </div>
-            <span className="gauge-value">{gauges.ego}%</span>
-          </div>
-          <div className="gauge-item">
-            <span className="gauge-label">Hunger</span>
-            <div className="gauge-track">
-              <div className="gauge-fill hunger-fill" style={{ width: `${gauges.hunger}%` }} />
-            </div>
-            <span className="gauge-value">{gauges.hunger}%</span>
-          </div>
-          <div className="gauge-item wide">
-            <span className="gauge-label">Ship Integrity</span>
-            <div className="gauge-track danger-track">
-              <div className="gauge-fill integrity-fill" style={{ width: `${ship.integrity}%` }} />
-            </div>
-            <span className="gauge-value">{Math.round(ship.integrity)}%</span>
-          </div>
-          {room?.hasStray && (
-            <div className="gauge-item compact">
-              <span className={`stray-indicator ${strayWoke ? 'awake' : 'dormant'}`}>
-                {strayWoke ? '⚠️ Stray Active' : '💤 Stray Dormant'}
-              </span>
-            </div>
-          )}
-          {roomCompleted && room?.nextRoom && (
-            <div className="gauge-item compact">
-              <span className="next-room-indicator">→ Ready for next room</span>
-            </div>
-          )}
-        </div>
-      )}
     </div>
   );
 }
