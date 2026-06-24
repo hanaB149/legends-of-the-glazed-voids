@@ -1,16 +1,31 @@
-# React + Vite
+# Legends of the Glazed Voids
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+A social-puzzle adventure where you don't control a character — you persuade one.
 
-Currently, two official plugins are available:
+Captain Glaze, a vain and anxious AI captain, needs your help navigating his collapsing doughnut starship. You are Cruller, a disembodied operator. You don't command — you convince.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+Read the captain, find the lever, and talk him through the U.S.V. Old-Fashioned in about five minutes.
 
-## React Compiler
+## Play
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+https://hanab149.github.io/legends-of-the-glazed-voids/
 
-## Expanding the Oxlint configuration
+## Built With
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and Oxlint's TypeScript related rules in your project.
+- React + Vite
+- In-memory state (Zustand)
+- Deterministic compliance engine
+- LLM-native persuasion mechanics
+
+## Development
+
+```bash
+npm install
+npm run dev
+```
+
+## Build
+
+```bash
+npm run build
+```
