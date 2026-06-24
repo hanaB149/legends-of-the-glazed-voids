@@ -4,19 +4,19 @@ const TILE = 32;
 
 const PALETTES = {
   bridge: {
-    floor: '#2a1050', floorAlt: '#351860', wall: '#4B1A8C', wallAccent: '#6B2FAF',
-    accent: '#7B3FBF', light: '#00C8FF', warm: '#FFD700', danger: '#FF4444',
-    shadow: '#1a0840', metal: '#3a2060',
+    floor: '#5a3a8a', floorAlt: '#6a4a9a', wall: '#7B4FAF', wallAccent: '#9B6FCF',
+    accent: '#9B6FCF', light: '#44DDFF', warm: '#FFDD44', danger: '#FF5566',
+    shadow: '#4a2a7a', metal: '#6a4a9a',
   },
   glazing_bay: {
-    floor: '#1a0850', floorAlt: '#221060', wall: '#3a1870', wallAccent: '#5B2FAF',
-    accent: '#8B5FCF', light: '#00C8FF', warm: '#FFD700', danger: '#FF4444',
-    shadow: '#100540', metal: '#2a1060',
+    floor: '#4a3a7a', floorAlt: '#5a4a8a', wall: '#6a4a9a', wallAccent: '#8B6FBF',
+    accent: '#AB8FDF', light: '#44DDFF', warm: '#FFDD44', danger: '#FF5566',
+    shadow: '#3a2a6a', metal: '#5a4a8a',
   },
   maw: {
-    floor: '#1a0530', floorAlt: '#220840', wall: '#3a1060', wallAccent: '#5B2FAF',
-    accent: '#FF00FF', light: '#00FF88', warm: '#FFAA00', danger: '#FF4444',
-    shadow: '#0a0020', metal: '#2a0840',
+    floor: '#4a2a6a', floorAlt: '#5a3a7a', wall: '#6a3a8a', wallAccent: '#8B6FBF',
+    accent: '#FF66FF', light: '#44FFAA', warm: '#FFCC44', danger: '#FF5566',
+    shadow: '#3a1a5a', metal: '#5a3a7a',
   },
 };
 
@@ -24,7 +24,7 @@ export function renderGame(ctx, w, h, roomData, player, npcs, objects, riftsInte
   const camX = player.x - w / 2 + TILE / 2;
   const camY = player.y - h / 2 + TILE / 2;
 
-  ctx.fillStyle = '#050010';
+  ctx.fillStyle = '#1a0a3a';
   ctx.fillRect(0, 0, w, h);
 
   const map = roomData.map;
@@ -41,7 +41,7 @@ export function renderGame(ctx, w, h, roomData, player, npcs, objects, riftsInte
       if (sx + TILE < -10 || sx > w + 10 || sy + TILE < -10 || sy > h + 10) continue;
 
       if (tile === T.VOID) {
-        ctx.fillStyle = '#050010';
+        ctx.fillStyle = '#0a0020';
         ctx.fillRect(sx, sy, TILE, TILE);
         continue;
       }
@@ -141,7 +141,7 @@ export function renderGame(ctx, w, h, roomData, player, npcs, objects, riftsInte
   if (!gameEnding) {
     const grad = ctx.createRadialGradient(w / 2, h / 2, h * 0.3, w / 2, h / 2, h * 0.85);
     grad.addColorStop(0, 'rgba(0,0,0,0)');
-    grad.addColorStop(1, 'rgba(0,0,0,0.25)');
+    grad.addColorStop(1, 'rgba(0,0,0,0.15)');
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, w, h);
   }
@@ -520,38 +520,38 @@ function drawPlayer(ctx, x, y, player, frame, pal) {
   ctx.fillRect(x - 8, y + 18, 16, 4);
 
   // Suit
-  ctx.fillStyle = '#2a1060';
+  ctx.fillStyle = '#5a3a9a';
   ctx.fillRect(x - 7, y - 8 + bobY, 14, 18);
-  ctx.fillStyle = '#3a2070';
+  ctx.fillStyle = '#7a5aba';
   ctx.fillRect(x - 6, y - 6 + bobY, 12, 14);
 
   // Helmet
-  ctx.fillStyle = '#4B1A8C';
+  ctx.fillStyle = '#7B4FAF';
   ctx.fillRect(x - 6, y - 18 + bobY, 12, 12);
-  ctx.strokeStyle = pal.light;
+  ctx.strokeStyle = '#44DDFF';
   ctx.lineWidth = 0.5;
   ctx.strokeRect(x - 6, y - 18 + bobY, 12, 12);
 
   // Visor
-  ctx.fillStyle = pal.light;
-  ctx.globalAlpha = 0.3;
+  ctx.fillStyle = '#44DDFF';
+  ctx.globalAlpha = 0.35;
   ctx.fillRect(x - 4, y - 16 + bobY, 8, 4);
   ctx.globalAlpha = 1;
 
   // Eyes
-  ctx.fillStyle = '#00C8FF';
+  ctx.fillStyle = '#44DDFF';
   ctx.fillRect(x - 4, y - 14 + bobY, 3, 2);
   ctx.fillRect(x + 1, y - 14 + bobY, 3, 2);
 
   // Blink
   if (frame % 100 < 4) {
-    ctx.fillStyle = '#0A0014';
+    ctx.fillStyle = '#1a0a3a';
     ctx.fillRect(x - 4, y - 14 + bobY, 3, 1);
     ctx.fillRect(x + 1, y - 14 + bobY, 3, 1);
   }
 
   // Shoulder pads
-  ctx.fillStyle = '#4B1A8C';
+  ctx.fillStyle = '#7B4FAF';
   ctx.fillRect(x - 9, y - 6 + bobY, 4, 8);
   ctx.fillRect(x + 5, y - 6 + bobY, 4, 8);
 
