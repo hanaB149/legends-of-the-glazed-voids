@@ -98,8 +98,8 @@ export const useGameStore = create((set, get) => ({
     // Check proximity to NPCs/objects
     const dist = (ax, ay) => Math.abs(newX - ax) + Math.abs(newY - ay);
 
-    const nearGlaze = state.roomId === 'bridge' && dist(room.glazePos.x * 32 + 16, room.glazePos.y * 32 + 16) < 40;
-    const nearHatch = state.roomId === 'bridge' && dist(room.hatchPos.x * 32 + 16, room.hatchPos.y * 32 + 16) < 40;
+    const nearGlaze = room.glazePos && dist(room.glazePos.x * 32 + 16, room.glazePos.y * 32 + 16) < 40;
+    const nearHatch = room.hatchPos && dist(room.hatchPos.x * 32 + 16, room.hatchPos.y * 32 + 16) < 40;
     const nearCore = state.roomId === 'glazing_bay' && dist(room.corePos.x * 32 + 16, room.corePos.y * 32 + 16) < 48;
     const nearStray = state.roomId === 'glazing_bay' && dist(room.strayPos.x * 32 + 16, room.strayPos.y * 32 + 16) < 40;
     const nearRift = state.roomId === 'maw' && dist(room.riftPos.x * 32 + 16, room.riftPos.y * 32 + 16) < 48;
