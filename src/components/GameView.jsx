@@ -1,26 +1,25 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useGameStore } from '../engine/store.js';
-import { getMoodRead } from '../engine/compliance.js';
-import { getRoom } from '../data/rooms.js';
 import { Audio } from '../audio/audio.js';
-import { renderScene } from './PixelScene.js';
+import { getRoom } from '../data/rooms.js';
+import { renderGame } from './PixelScene.js';
 
 const SUGGESTIONS = {
   bridge: [
-    { text: 'Move to the hatch, Captain', icon: '\u{1F3AF}', appeal: 'command' },
-    { text: 'You\'re the only one who can do this', icon: '\u{1F31F}', appeal: 'flatter' },
-    { text: 'It\'s safe, I\'ve got eyes on everything', icon: '\u{1F6E1}', appeal: 'reassure' },
+    { text: 'Move to the hatch, Captain', icon: '\u{1F3AF}' },
+    { text: 'You are the only one who can do this', icon: '\u{1F31F}' },
+    { text: 'It is safe, I have got eyes on everything', icon: '\u{1F6E1}' },
   ],
   glazing_bay: [
-    { text: 'Grab the Glaze Core', icon: '\u{1F3AF}', appeal: 'command' },
-    { text: 'There\'s a doughnut in it for you', icon: '\u{1F369}', appeal: 'bribe' },
-    { text: 'The cat is asleep. Quietly does it.', icon: '\u{1F92B}', appeal: 'reassure' },
-    { text: 'You\'re the Captain. Act like it.', icon: '\u26A1', appeal: 'argue' },
+    { text: 'Grab the Glaze Core', icon: '\u{1F3AF}' },
+    { text: 'There is a doughnut in it for you', icon: '\u{1F369}' },
+    { text: 'The cat is asleep. Quietly does it.', icon: '\u{1F92B}' },
+    { text: 'You are the Captain. Act like it.', icon: '\u26A1' },
   ],
   maw: [
-    { text: 'Seal the rift with a Glaze Core', icon: '\u{1F52E}', appeal: 'command' },
-    { text: 'Feed Vermious the Void Cruller', icon: '\u{1FAB1}', appeal: 'command' },
-    { text: 'We\'re out of time, just do it!', icon: '\u23F0', appeal: 'argue' },
+    { text: 'Seal the rift with a Glaze Core', icon: '\u{1F52E}' },
+    { text: 'Feed Vermious the Void Cruller', icon: '\u{1FAB1}' },
+    { text: 'We are out of time, just do it!', icon: '\u23F0' },
   ],
 };
 
@@ -29,250 +28,298 @@ export function GameView() {
   const animRef = useRef(null);
   const frameRef = useRef(0);
   const scrollRef = useRef(null);
+  const keysRef = useRef({});
+  const inputRef = useRef(null);
 
-  const messages = useGameStore(s => s.messages);
-  const isProcessing = useGameStore(s => s.isProcessing);
-  const gameEnding = useGameStore(s => s.gameEnding);
-  const processTurn = useGameStore(s => s.processTurn);
-  const startGame = useGameStore(s => s.startGame);
-  const gauges = useGameStore(s => s.gauges);
-  const inventory = useGameStore(s => s.inventory);
-  const ship = useGameStore(s => s.ship);
-  const roomId = useGameStore(s => s.roomId);
-  const roomCompleted = useGameStore(s => s.roomCompleted);
-  const strayWoke = useGameStore(s => s.strayWoke);
-  const glazeExpression = useGameStore(s => s.glazeExpression);
-  const flashMessage = useGameStore(s => s.flashMessage);
-  const riftsIntensity = useGameStore(s => s.riftsIntensity);
-
+  const store = useGameStore();
   const [input, setInput] = useState('');
   const [audioStarted, setAudioStarted] = useState(false);
 
-  const mood = getMoodRead(gauges);
-  const room = getRoom(roomId);
-  const suggestions = SUGGESTIONS[roomId] || [];
+  const room = store.roomId;
 
+  // Movement loop
   useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }
-  }, [messages]);
+    if (store.gameEnding) return;
 
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    if (!input.trim() || isProcessing || gameEnding) return;
-    if (!audioStarted) {
-      Audio.init();
-      Audio.startBGM();
-      setAudioStarted(true);
-    }
-    Audio.sfx('blip');
-    processTurn(input.trim());
-    setInput('');
-  };
+    const interval = setInterval(() => {
+      const k = keysRef.current;
+      let dx = 0, dy = 0;
+      if (k['ArrowUp'] || k['KeyW']) dy = -1;
+      if (k['ArrowDown'] || k['KeyS']) dy = 1;
+      if (k['ArrowLeft'] || k['KeyA']) dx = -1;
+      if (k['ArrowRight'] || k['KeyD']) dx = 1;
 
-  const handleSuggestion = (text) => {
-    if (isProcessing || gameEnding) return;
-    if (!audioStarted) {
-      Audio.init();
-      Audio.startBGM();
-      setAudioStarted(true);
-    }
-    Audio.sfx('blip');
-    processTurn(text);
-  };
+      if (dx || dy) {
+        useGameStore.getState().movePlayer(dx, dy);
+      } else if (store.playerWalking) {
+        useGameStore.getState().stopPlayer();
+      }
+    }, 16);
 
-  const handleStartBGM = useCallback(() => {
-    Audio.init();
-    Audio.startBGM();
-    setAudioStarted(true);
-  }, []);
+    return () => clearInterval(interval);
+  }, [store.gameEnding, store.playerWalking]);
 
-  // Canvas animation loop
+  // Keyboard handlers
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      keysRef.current[e.code] = true;
+
+      if (e.code === 'Space') {
+        e.preventDefault();
+        if (!audioStarted) {
+          Audio.init(); Audio.startBGM(); setAudioStarted(true);
+        }
+        if (store.interactionMessage?.includes('[SPACE]')) {
+          Audio.sfx('blip');
+          useGameStore.getState().interact();
+        }
+      }
+
+      if (e.code === 'Enter' && store.interactionMessage?.includes('TYPE')) {
+        inputRef.current?.focus();
+      }
+    };
+
+    const handleKeyUp = (e) => {
+      keysRef.current[e.code] = false;
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+    };
+  }, [audioStarted, store.interactionMessage]);
+
+  // Canvas render loop
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
 
-    function resize() {
+    const resize = () => {
       const p = canvas.parentElement;
-      if (p) {
-        canvas.width = p.clientWidth;
-        canvas.height = p.clientHeight;
-      }
-    }
+      if (p) { canvas.width = p.clientWidth; canvas.height = p.clientHeight; }
+    };
     resize();
     window.addEventListener('resize', resize);
 
-    function loop() {
+    const loop = () => {
       frameRef.current++;
       if (ctx && canvas.width > 0 && canvas.height > 0) {
-        renderScene(ctx, canvas.width, canvas.height, room, riftsIntensity, strayWoke, frameRef.current);
+        const s = useGameStore.getState();
+        const rd = getRoom(s.roomId);
+        const npcs = buildNPCs(s, rd);
+        const objects = buildObjects(s, rd);
+
+        renderGame(ctx, canvas.width, canvas.height, rd, {
+          x: s.playerX, y: s.playerY, dir: s.playerDir, walking: s.playerWalking,
+        }, npcs, objects, s.riftsIntensity, frameRef.current, s.strayWoke, s.gameEnding);
       }
       animRef.current = requestAnimationFrame(loop);
-    }
+    };
     loop();
 
     return () => {
       window.removeEventListener('resize', resize);
       if (animRef.current) cancelAnimationFrame(animRef.current);
     };
-  }, [roomId, riftsIntensity, strayWoke, room]);
+  }, []); // Run once
 
-  // Sound effects for game events
+  // Chat scroll
   useEffect(() => {
-    if (!audioStarted) return;
-    if (flashMessage) {
-      if (flashMessage.includes('+1') || flashMessage.includes('sealed') || flashMessage.includes('opened')) {
-        Audio.sfx('success');
-      } else if (flashMessage.includes('Objection') || flashMessage.includes('Refused')) {
-        Audio.sfx('refuse');
-      } else if (flashMessage.includes('Stray woke')) {
-        Audio.sfx('danger');
-      } else if (flashMessage.includes('deal') || flashMessage.includes('doughnut')) {
-        Audio.sfx('bribe');
-      }
-    }
-  }, [flashMessage, audioStarted]);
+    if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+  }, [store.messages]);
 
-  // Endgame sounds
+  // Sound effects
   useEffect(() => {
-    if (!audioStarted || !gameEnding) return;
+    if (!audioStarted || !store.flashMessage) return;
+    if (store.flashMessage.includes('CORE') || store.flashMessage.includes('SEALED') || store.flashMessage.includes('OPENED')) Audio.sfx('success');
+    else if (store.flashMessage.includes('OBJECTION') || store.flashMessage.includes('REFUSED')) Audio.sfx('refuse');
+    else if (store.flashMessage.includes('STRAY')) Audio.sfx('danger');
+    else if (store.flashMessage.includes('COUNTEROFFER') || store.flashMessage.includes('doughnut')) Audio.sfx('bribe');
+  }, [store.flashMessage, audioStarted]);
+
+  useEffect(() => {
+    if (!audioStarted || !store.gameEnding) return;
     Audio.stopBGM();
-    if (gameEnding === 'victory') Audio.sfx('victory');
-    else if (gameEnding === 'supreme_glaze') Audio.sfx('secret');
+    if (store.gameEnding === 'victory') Audio.sfx('victory');
+    else if (store.gameEnding === 'supreme_glaze') Audio.sfx('secret');
     else Audio.sfx('defeat');
-  }, [gameEnding, audioStarted]);
+  }, [store.gameEnding, audioStarted]);
 
-  const handleRestart = () => {
-    Audio.stopBGM();
-    setAudioStarted(false);
-    startGame();
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    if (!input.trim() || store.isProcessing || store.gameEnding) return;
+    if (!audioStarted) { Audio.init(); Audio.startBGM(); setAudioStarted(true); }
+    Audio.sfx('blip');
+    store.processTurn(input.trim());
+    setInput('');
   };
 
+  const handleSuggestion = (text) => {
+    if (store.isProcessing || store.gameEnding) return;
+    if (!audioStarted) { Audio.init(); Audio.startBGM(); setAudioStarted(true); }
+    Audio.sfx('blip');
+    store.processTurn(text);
+  };
+
+  const handleRestart = () => {
+    Audio.stopBGM(); setAudioStarted(false);
+    store.startGame();
+  };
+
+  const suggestions = SUGGESTIONS[store.roomId] || [];
+  const needsChat = store.interactionMessage?.includes('TYPE') || store.nearGlaze;
+
   return (
-    <div className="game-view" onClick={handleStartBGM}>
-      <div className="game-view-inner">
-        {/* Canvas scene (third-person view) */}
-        <div className="scene-container" style={{ position: 'relative', overflow: 'hidden' }}>
-          <canvas ref={canvasRef} className="pixel-canvas" />
-
-          {flashMessage && (
-            <div className="pixel-flash">
-              <span>{flashMessage}</span>
-            </div>
-          )}
-
-          {!audioStarted && (
-            <div className="click-to-play">
-              <span>CLICK TO START</span>
-            </div>
-          )}
+    <div className="game-view">
+      {/* Top HUD */}
+      <div className="hud-top">
+        <div className="hud-left">
+          <span className="hud-room">{store.roomId === 'bridge' ? 'BRIDGE' : store.roomId === 'glazing_bay' ? 'GLAZING BAY' : 'THE MAW'}</span>
+          <span className={`hud-hp ${store.ship.integrity < 30 ? 'low' : ''}`}>HP {Math.round(store.ship.integrity)}%</span>
         </div>
-
-        {/* HUD overlay on scene */}
-        <div className="pixel-hud">
-          <div className="pixel-hud-top">
-            <div className="pixel-hud-left">
-              <span className="pixel-badge room-badge">&gt; {room?.name || 'UNKNOWN'}</span>
-              <span className="pixel-badge obj-badge">{room?.objective?.slice(0, 40) || ''}</span>
-            </div>
-            <div className="pixel-hud-right">
-              <span className="pixel-stat"><span className="pixel-icon">C</span> {inventory.glazeCores}</span>
-              <span className="pixel-stat"><span className="pixel-icon">V</span> {inventory.voidCrullers}</span>
-              <span className={`pixel-stat ${ship.integrity < 30 ? 'danger-text' : ''}`}>
-                HP {Math.round(ship.integrity)}%
-              </span>
-            </div>
-          </div>
+        <div className="hud-center">
+          <span className="hud-core">CORE:{store.inventory.glazeCores}</span>
+          <span className="hud-cruller">CRUL:{store.inventory.voidCrullers}</span>
         </div>
+        <div className="hud-right">
+          <span className={`hud-stray ${store.strayWoke ? 'woke' : ''}`}>
+            {store.strayWoke ? 'STRAY!' : 'SAFE'}
+          </span>
+        </div>
+      </div>
 
-        {/* Bottom panel: chat + gauges */}
-        <div className="pixel-bottom-panel">
-          {/* Gauge bar */}
-          <div className="pixel-gauges">
-            <div className="pixel-gauge">
-              <span className="g-label">TRUST</span>
-              <div className="g-track"><div className="g-fill g-trust" style={{ width: `${gauges.trust}%` }} /></div>
-            </div>
-            <div className="pixel-gauge">
-              <span className="g-label">COMP</span>
-              <div className="g-track"><div className="g-fill g-composure" style={{ width: `${gauges.composure}%` }} /></div>
-            </div>
-            <div className="pixel-gauge">
-              <span className="g-label">EGO</span>
-              <div className="g-track"><div className="g-fill g-ego" style={{ width: `${gauges.ego}%` }} /></div>
-            </div>
-            <div className="pixel-gauge">
-              <span className="g-label">HUNGER</span>
-              <div className="g-track"><div className="g-fill g-hunger" style={{ width: `${gauges.hunger}%` }} /></div>
-            </div>
-            <div className="pixel-gauge mood-gauge">
-              <span className="g-label">MOOD</span>
-              <span className={`mood-indicator mood-${mood.toLowerCase()}`}>{mood}</span>
-            </div>
-            {room?.hasStray && (
-              <div className="pixel-gauge">
-                <span className={`stray-tag ${strayWoke ? 'awake' : 'dormant'}`}>
-                  {strayWoke ? 'STRAY!' : 'SLEEP'}
-                </span>
-              </div>
-            )}
-            {roomCompleted && room?.nextRoom && (
-              <div className="pixel-gauge">
-                <span className="next-tag">{'>'} NEXT</span>
-              </div>
-            )}
+      {/* Game canvas */}
+      <div className="game-canvas-wrap">
+        <canvas ref={canvasRef} className="game-canvas" />
+
+        {/* Interaction hint */}
+        {store.interactionMessage && (
+          <div className="interact-hint">
+            <span className="interact-text">{store.interactionMessage}</span>
           </div>
+        )}
 
-          {/* Chat */}
-          <div className="pixel-chat">
-            <div className="pixel-chat-messages" ref={scrollRef}>
-              {messages.map((msg, i) => (
-                <div key={i} className={`pixel-msg pixel-msg-${msg.role}`}>
-                  {msg.role === 'player' && <>&gt; {msg.text}</>}
-                  {msg.role === 'glaze' && <span className="glaze-text">{msg.text}</span>}
-                  {msg.role === 'system' && <span className="sys-text">{msg.text}</span>}
-                </div>
+        {/* Flash */}
+        {store.flashMessage && (
+          <div className="flash-bar">
+            <span>{store.flashMessage}</span>
+          </div>
+        )}
+
+        {/* Controls hint */}
+        <div className="controls-hint">
+          WASD MOVE | SPACE INTERACT | TYPE TO TALK
+        </div>
+      </div>
+
+      {/* Bottom panel */}
+      <div className="bottom-panel">
+        {/* Gauges */}
+        <div className="gauge-strip">
+          <div className="gauge-item"><span className="g-label">TRUST</span><div className="g-bar"><div className="g-fill g-trust" style={{width:`${store.gauges.trust}%`}}/></div><span className="g-val">{store.gauges.trust}</span></div>
+          <div className="gauge-item"><span className="g-label">COMP</span><div className="g-bar"><div className="g-fill g-comp" style={{width:`${store.gauges.composure}%`}}/></div><span className="g-val">{store.gauges.composure}</span></div>
+          <div className="gauge-item"><span className="g-label">EGO</span><div className="g-bar"><div className="g-fill g-ego" style={{width:`${store.gauges.ego}%`}}/></div><span className="g-val">{store.gauges.ego}</span></div>
+          <div className="gauge-item"><span className="g-label">HUNGER</span><div className="g-bar"><div className="g-fill g-hunger" style={{width:`${store.gauges.hunger}%`}}/></div><span className="g-val">{store.gauges.hunger}</span></div>
+          <div className="gauge-item gauge-mood">
+            <span className={`mood-badge mood-${store.glazeExpression}`}>{store.glazeExpression.toUpperCase()}</span>
+          </div>
+          {!store.gameEnding && !store.roomCompleted && suggestions.length > 0 && (
+            <div className="gauge-quick">
+              {suggestions.slice(0, 2).map((s, i) => (
+                <button key={i} className="quick-chip" onClick={() => handleSuggestion(s.text)} disabled={store.isProcessing}>
+                  {s.text.slice(0, 20)}
+                </button>
               ))}
-              {isProcessing && (
-                <div className="pixel-msg pixel-msg-glaze">
-                  <span className="glaze-text typing-dots"><span/><span/><span/></span>
-                </div>
-              )}
             </div>
+          )}
+        </div>
 
-            {!gameEnding && !roomCompleted && suggestions.length > 0 && (
-              <div className="pixel-suggestions">
-                {suggestions.map((s, i) => (
-                  <button key={i} className="pixel-chip" onClick={() => handleSuggestion(s.text)} disabled={isProcessing}>
-                    {s.icon} {s.text}
-                  </button>
-                ))}
+        {/* Chat */}
+        <div className="chat-area">
+          <div className="chat-msgs" ref={scrollRef}>
+            {store.messages.slice(-6).map((msg, i) => (
+              <div key={i} className={`chat-line chat-${msg.role}`}>
+                {msg.role === 'player' && <span className="player-pre">{'>'} </span>}
+                <span>{msg.text.length > 80 ? msg.text.slice(0, 80) + '...' : msg.text}</span>
               </div>
-            )}
-
-            {!gameEnding ? (
-              <form className="pixel-input-row" onSubmit={handleSubmit}>
-                <span className="prompt-symbol">{'>'}</span>
-                <input
-                  type="text"
-                  value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                  placeholder="TYPE MESSAGE..."
-                  disabled={isProcessing}
-                  autoFocus
-                />
-                <button type="submit" disabled={isProcessing || !input.trim()}>SEND</button>
-              </form>
-            ) : (
-              <div className="pixel-restart">
-                <button className="pixel-btn" onClick={handleRestart}>PLAY AGAIN</button>
-              </div>
-            )}
+            ))}
+            {store.isProcessing && <div className="chat-line chat-glaze"><span className="dots"><span/><span/><span/></span></div>}
           </div>
+
+          {!store.gameEnding ? (
+            <form className="chat-form" onSubmit={handleSubmit}>
+              <span className="prompt">{'>'}</span>
+              <input ref={inputRef} type="text" value={input} onChange={e => setInput(e.target.value)}
+                placeholder={needsChat ? 'TYPE YOUR MESSAGE...' : 'TYPE TO TALK...'}
+                disabled={store.isProcessing} autoFocus />
+              <button type="submit" disabled={store.isProcessing || !input.trim()}>SEND</button>
+            </form>
+          ) : (
+            <div className="game-over-bar">
+              <button className="retro-btn" onClick={handleRestart}>PLAY AGAIN</button>
+            </div>
+          )}
         </div>
       </div>
     </div>
   );
+}
+
+function buildNPCs(state, room) {
+  const npcs = [];
+  if (!room) return npcs;
+
+  // Glaze
+  if (room.glazePos) {
+    const moodMap = {
+      terrified: '#FF4444', nervous: '#FFAA00', pleased: '#44FF88',
+      smug: '#00C8FF', frustrated: '#FF8800', suspicious: '#FF8800',
+      triumphant: '#FF00FF', neutral: '#00C8FF',
+    };
+    npcs.push({
+      type: 'glaze',
+      worldX: room.glazePos.x * 32 + 16,
+      worldY: room.glazePos.y * 32 + 16,
+      mood: state.glazeExpression || 'neutral',
+      moodColor: moodMap[state.glazeExpression] || '#00C8FF',
+      seed: 1,
+    });
+  }
+
+  // Stray
+  if (room.hasStray && room.strayPos) {
+    npcs.push({
+      type: 'stray',
+      worldX: room.strayPos.x * 32 + 16,
+      worldY: room.strayPos.y * 32 + 16,
+      awake: state.strayWoke,
+      seed: 2,
+    });
+  }
+
+  // Vermious
+  if (room.wormPos) {
+    npcs.push({
+      type: 'vermious',
+      worldX: room.wormPos.x * 32 + 16,
+      worldY: room.wormPos.y * 32 + 16,
+      seed: 3,
+    });
+  }
+
+  return npcs;
+}
+
+function buildObjects(state, room) {
+  const objs = [];
+  if (!room) return objs;
+  if (room.requiredAction?.id === 'grab_core' && room.corePos) {
+    if (state.roomCompleted) return objs;
+    objs.push({ x: room.corePos.x * 32, y: room.corePos.y * 32 });
+  }
+  return objs;
 }
