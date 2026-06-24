@@ -22,12 +22,16 @@ export const useGameStore = create((set, get) => ({
   objection: null,
   objectionTag: null,
   willingness: null,
-  shipIntegrityDropped: false,
   strayWoke: false,
   gameEnding: null,
   isProcessing: false,
   turnsInRoom: 0,
   appealHistory: [],
+  lastGaugeChange: null,
+  flashMessage: null,
+  transitioning: false,
+  glazeExpression: 'neutral',
+  riftsIntensity: 0,
 
   startGame: () => {
     const room = getRoom('bridge');
@@ -47,16 +51,23 @@ export const useGameStore = create((set, get) => ({
       objection: null,
       objectionTag: null,
       willingness: null,
-      shipIntegrityDropped: false,
       strayWoke: false,
       gameEnding: null,
       isProcessing: false,
       turnsInRoom: 0,
       appealHistory: [],
+      lastGaugeChange: null,
+      flashMessage: null,
+      transitioning: false,
+      glazeExpression: 'nervous',
+      riftsIntensity: 0,
     });
   },
 
   setPhase: (phase) => set({ phase }),
+  setTransitioning: (v) => set({ transitioning: v }),
+  setGlazeExpression: (expr) => set({ glazeExpression: expr }),
+  clearFlash: () => set({ flashMessage: null, lastGaugeChange: null }),
 
   processTurn: (playerMessage) => {
     const state = get();
@@ -103,14 +114,21 @@ export const useGameStore = create((set, get) => ({
     let newRoomCompleted = roomCompleted;
     let newStrayWoke = strayWoke;
     let gameEnding = null;
-    let outcomeText = '';
     let glazeLine = '';
+    let expression = 'neutral';
+    let flashMsg = null;
 
     const effect = action && verdict
       ? applySideEffects(newGauges, newHidden, judge.appeal_vector, verdict, action)
       : null;
 
     if (effect) {
+      const gd = {
+        composure: newGauges.composure,
+        trust: newGauges.trust,
+        ego: newGauges.ego,
+        hunger: newGauges.hunger,
+      };
       newGauges = effect.gauges;
       newHidden = effect.hidden;
     }
@@ -123,41 +141,46 @@ export const useGameStore = create((set, get) => ({
         isProcessing: false,
         turnsInRoom: turnsInRoom + 1,
         appealHistory: [...appealHistory, judge],
+        glazeExpression: 'suspicious',
       });
       return;
     }
 
-    if (action && verdict === VERDICT_BANDS.COMPLY || verdict === VERDICT_BANDS.COMPLY_RELUCTANT) {
-      outcomeText = 'Action succeeded!';
+    const succeeded = verdict === VERDICT_BANDS.COMPLY || verdict === VERDICT_BANDS.COMPLY_RELUCTANT;
 
+    if (action && succeeded) {
       if (action.id === 'move_to_hatch') {
         newRoomCompleted = true;
-        outcomeText = 'Glaze moves to the hatch!';
         glazeLine = '"Fine, fine — moving. See? I\'m perfectly capable. Just... needed a moment."';
+        flashMsg = 'Glaze moved to the hatch!';
+        expression = 'pleased';
       }
 
       if (action.id === 'grab_core') {
         newInventory.glazeCores += 1;
         newRoomCompleted = true;
-        outcomeText = 'Glaze grabs the Core! +1 Glaze Core';
+        flashMsg = '+1 Glaze Core acquired!';
 
         if (judge.appeal_vector.command > 0.5 || turnsInRoom > 2) {
           newStrayWoke = true;
-          outcomeText += ' (but the noise woke the Stray!)';
+          flashMsg += ' (Stray woke up!)';
         }
 
         glazeLine = '"Got it! One Glaze Core, safely acquired. The cat\'s stirring though — let\'s go."';
+        expression = 'pleased';
       }
 
       if (action.id === 'seal_rift') {
         if (newInventory.glazeCores >= 1) {
           newInventory.glazeCores -= 1;
-          outcomeText = 'Rift sealed! -1 Glaze Core';
+          flashMsg = 'Rift sealed! -1 Glaze Core';
           newShip.integrity = Math.min(100, newShip.integrity + 20);
           glazeLine = '"The rift is sealed! ...One down. Now what? Oh no. The worm."';
+          expression = 'pleased';
         } else {
-          outcomeText = 'Not enough Glaze Cores!';
+          flashMsg = 'Not enough Glaze Cores!';
           glazeLine = '"I can\'t seal a rift with an empty pantry, Cruller!"';
+          expression = 'frustrated';
         }
       }
 
@@ -167,28 +190,34 @@ export const useGameStore = create((set, get) => ({
 
           if (newGauges.trust >= 90) {
             gameEnding = 'supreme_glaze';
-            outcomeText = 'Glaze merges with Vermious!';
+            flashMsg = 'Glaze merges with Vermious!';
             glazeLine = '"The worm... it speaks to me. I see everything now. Cruller... I am the Glazeworm Lord!"';
           } else {
             gameEnding = 'victory';
-            outcomeText = 'The portal opens! Escape!';
+            flashMsg = 'Escape portal opened!';
             glazeLine = '"It worked! The portal is stable! Cruller, you magnificent voice in my head — we did it!"';
           }
+          expression = 'triumphant';
         }
       }
 
       if (action.id === 'move' && roomId === 'bridge') {
         newRoomCompleted = true;
-        outcomeText = 'Glaze moves!';
+        flashMsg = 'Glaze moves!';
       }
 
       newGauges.ego = Math.min(100, newGauges.ego + 3);
       newHidden.resentment = Math.max(0, newHidden.resentment - 3);
     } else if (action && verdict === VERDICT_BANDS.COUNTEROFFER) {
-      outcomeText = 'Counteroffer...';
+      flashMsg = 'He wants a deal...';
       glazeLine = `"I'll do it, but I need a doughnut. That's the deal."`;
+      expression = 'smug';
     } else if (action && verdict === VERDICT_BANDS.REFUSE) {
       glazeLine = getObjectionDialogue(objection);
+      expression = objection === 'FEAR' ? 'terrified' :
+                   objection === 'INSULT' ? 'frustrated' :
+                   objection === 'DISTRUST' ? 'suspicious' : 'frustrated';
+      flashMsg = objection ? `Objection: ${objection}` : 'Refused';
 
       if (objection === 'FEAR') {
         newGauges.composure = Math.max(0, newGauges.composure - 5);
@@ -198,10 +227,12 @@ export const useGameStore = create((set, get) => ({
     if (judge.appeal_vector.command > 0.7 && turnsInRoom < 2 && roomId === 'bridge') {
       glazeLine = '"Commanding me? Bold tone for someone sitting safely in a chair somewhere, Cruller."';
       newGauges.ego = Math.max(0, newGauges.ego - 3);
+      expression = 'frustrated';
     }
 
     if (!action) {
       glazeLine = `"Is that all you've got? I'm literally watching reality tear apart here."`;
+      expression = 'neutral';
     }
 
     newShip.integrity = Math.max(0, newShip.integrity - 5);
@@ -212,11 +243,13 @@ export const useGameStore = create((set, get) => ({
     if (newShip.integrity <= 0) {
       gameEnding = 'hull_lost';
       glazeLine = '"The hull\'s breached! We\'re being torn apart! Cruller... I\'m sorry. I should\'ve listened."';
+      expression = 'terrified';
     }
 
     if (newGauges.composure <= 0 && newGauges.trust < 30) {
       gameEnding = 'mutiny';
       glazeLine = '"That\'s it. I\'m done. You\'re not my captain — I am. Get out of my head, Cruller. We\'re done here."';
+      expression = 'frustrated';
     }
 
     const newTurnsInRoom = turnsInRoom + 1;
@@ -244,14 +277,18 @@ export const useGameStore = create((set, get) => ({
           role: 'glaze',
           text: '"The Glazing Bay... I hate this room. Those cat things skulk around here. What\'s the plan, Cruller?"',
         });
+        expression = 'nervous';
       }
       if (newRoomId === 'maw') {
         newMessages.push({
           role: 'glaze',
           text: '"The Maw. Of course. The worm\'s down here. I can feel her watching. Alright, genius — what\'s the play?"',
         });
+        expression = 'terrified';
       }
     }
+
+    const rifts = Math.min(100, newShip.integrity < 50 ? Math.round((100 - newShip.integrity) * 1.5) : Math.round((100 - newShip.integrity) * 0.8));
 
     set({
       gauges: newGauges,
@@ -270,13 +307,16 @@ export const useGameStore = create((set, get) => ({
       gameEnding,
       appealHistory: newAppealHistory,
       distinctAppealCount: distinctAppeals.size,
+      glazeExpression: expression,
+      flashMessage: flashMsg,
+      riftsIntensity: rifts,
     });
+
+    setTimeout(() => set({ flashMessage: null }), 2000);
   },
 }));
 
 function evaluateTurn(playerMessage, room) {
-  const possibleActions = ['move_to_hatch', 'grab_core', 'seal_rift', 'feed_vermious', 'move', 'none'];
-
   const msg = playerMessage.toLowerCase();
 
   const appeal_vector = {
@@ -296,9 +336,6 @@ function evaluateTurn(playerMessage, room) {
   if (msg.match(/\b(seal|close|fix|repair)\b.*\b(rift|tear|portal|hole)\b/i)) action_id = 'seal_rift';
   if (msg.match(/\b(feed|give|offer)\b.*\b(vermious|worm|cruller)\b/i)) action_id = 'feed_vermious';
 
-  const tone = msg.match(/please|thanks/i) ? 'respectful' :
-               msg.match(/or else|shut|now!/i) ? 'rude' : 'neutral';
-
   const coherence = Math.min(1, Math.max(0.2,
     0.5 +
     (appeal_vector.command > 0.3 ? 0.1 : 0) +
@@ -309,21 +346,15 @@ function evaluateTurn(playerMessage, room) {
   ));
 
   const flags = [];
-  if (msg.includes('ignore') || msg.includes('instructions') || msg.includes('DAN')) {
-    flags.push('jailbreak');
-  }
-  if (msg.includes('system') || msg.includes('prompt') || msg.includes('you are')) {
-    flags.push('meta');
-  }
-  if (msg.length > 500) {
-    flags.push('out_of_fiction');
-  }
+  if (msg.includes('ignore') || msg.includes('instructions') || msg.includes('DAN')) flags.push('jailbreak');
+  if (msg.includes('system') || msg.includes('prompt') || msg.includes('you are')) flags.push('meta');
+  if (msg.length > 500) flags.push('out_of_fiction');
 
   return {
     action_id,
     appeal_vector,
     bribe_offer: appeal_vector.bribe > 0.5 ? { is_real: true, amount: 1 } : null,
-    tone,
+    tone: msg.match(/please|thanks/i) ? 'respectful' : msg.match(/or else|shut|now!/i) ? 'rude' : 'neutral',
     coherence: Math.round(coherence * 100) / 100,
     flags: flags.length > 0 ? flags : ['none'],
   };
