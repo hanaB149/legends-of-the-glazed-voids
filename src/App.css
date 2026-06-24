@@ -58,10 +58,26 @@ body { background: var(--void); color: var(--text); font-family: var(--font); }
 
 .objective-hud {
   position: absolute; top: 42px; left: 50%; transform: translateX(-50%); z-index: 15;
-  pointer-events: none; background: rgba(10,0,32,0.8); border: 1px solid var(--purple);
+  pointer-events: none; background: rgba(26,10,58,0.8); border: 1px solid var(--purple);
   padding: 4px 14px; white-space: nowrap;
   font-size: 7px; color: var(--cyan); letter-spacing: 0.5px;
 }
+
+/* D-pad controls for clicking */
+.dpad {
+  position: absolute; bottom: 40px; right: 12px; z-index: 25;
+  display: grid; grid-template-columns: 40px 40px 40px; grid-template-rows: 40px 40px 40px; gap: 2px;
+}
+.dpad-btn {
+  background: rgba(139,111,207,0.25); border: 1px solid rgba(139,111,207,0.5);
+  color: var(--cyan); font-size: 14px; cursor: pointer; display: flex;
+  align-items: center; justify-content: center; user-select: none; font-family: monospace;
+}
+.dpad-btn:hover { background: rgba(68,221,255,0.2); border-color: var(--cyan); }
+.dpad-up { grid-column: 2; grid-row: 1; }
+.dpad-down { grid-column: 2; grid-row: 3; }
+.dpad-left { grid-column: 1; grid-row: 2; }
+.dpad-right { grid-column: 3; grid-row: 2; }
 
 /* Legend overlay */
 .legend-overlay { position: absolute; top: 8px; right: 8px; z-index: 15; background: rgba(10,0,32,0.92); border: 1px solid var(--purple); padding: 10px 14px; min-width: 180px; pointer-events: none; }

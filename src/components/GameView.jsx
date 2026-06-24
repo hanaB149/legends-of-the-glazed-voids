@@ -22,18 +22,21 @@ const SUGGESTIONS = {
   ],
 };
 
+// Global key tracking - works regardless of React rendering
+const keys = {};
+
 export function GameView() {
   const canvasRef = useRef(null);
   const animRef = useRef(null);
   const frameRef = useRef(0);
   const scrollRef = useRef(null);
   const inputRef = useRef(null);
-  const keysRef = useRef({});
-  const waitingRef = useRef(false);
+
+  const [input, setInput] = useState('');
+  const [audioStarted, setAudioStarted] = useState(false);
   const [showLegend, setShowLegend] = useState(true);
 
-  // Use selector-based store reading to avoid re-renders
-  const phase = useGameStore(s => s.phase);
+  // Subscribe to individual store values
   const gameEnding = useGameStore(s => s.gameEnding);
   const isProcessing = useGameStore(s => s.isProcessing);
   const messages = useGameStore(s => s.messages);
@@ -47,93 +50,93 @@ export function GameView() {
   const flashMessage = useGameStore(s => s.flashMessage);
   const interactionMessage = useGameStore(s => s.interactionMessage);
   const waitingForChat = useGameStore(s => s.waitingForChat);
-  const playerWalking = useGameStore(s => s.playerWalking);
 
-  const [input, setInput] = useState('');
-  const [audioStarted, setAudioStarted] = useState(false);
-
-  // Keep waitingRef in sync
-  waitingRef.current = waitingForChat;
-
-  // Auto-focus chat input
+  // Global keyboard listeners - set once, never removed
   useEffect(() => {
-    if (waitingForChat && inputRef.current) {
-      inputRef.current.focus();
-    }
-  }, [waitingForChat]);
-
-  // Stable keyboard handler - runs once
-  useEffect(() => {
-    const handleKeyDown = (e) => {
-      keysRef.current[e.code] = true;
-
-      if (e.code === 'KeyH') { setShowLegend(v => !v); return; }
-
-      if (e.code === 'Space') {
-        e.preventDefault();
-        const store = useGameStore.getState();
-        if (!store.waitingForChat && store.interactionMessage?.includes('[SPACE]')) {
-          if (!audioStarted) { Audio.init(); Audio.startBGM(); setAudioStarted(true); }
-          Audio.sfx('blip');
-          store.interact();
-        }
-      }
+    const onKeyDown = (e) => {
+      keys[e.code] = true;
     };
-
-    const handleKeyUp = (e) => {
-      keysRef.current[e.code] = false;
+    const onKeyUp = (e) => {
+      keys[e.code] = false;
     };
-
-    window.addEventListener('keydown', handleKeyDown);
-    window.addEventListener('keyup', handleKeyUp);
+    document.addEventListener('keydown', onKeyDown);
+    document.addEventListener('keyup', onKeyUp);
     return () => {
-      window.removeEventListener('keydown', handleKeyDown);
-      window.removeEventListener('keyup', handleKeyUp);
+      document.removeEventListener('keydown', onKeyDown);
+      document.removeEventListener('keyup', onKeyUp);
     };
-  }, []); // stable - NEVER re-creates
+  }, []);
 
-  // Movement loop - reads keysRef and store directly
+  // SPACE handler listens as event, not through state
   useEffect(() => {
-    if (gameEnding) return;
-    const interval = setInterval(() => {
-      if (waitingRef.current) return;
-      const k = keysRef.current;
-      let dx = 0, dy = 0;
-      if (k['ArrowUp'] || k['KeyW']) dy = -1;
-      if (k['ArrowDown'] || k['KeyS']) dy = 1;
-      if (k['ArrowLeft'] || k['KeyA']) dx = -1;
-      if (k['ArrowRight'] || k['KeyD']) dx = 1;
-      if (dx || dy) {
-        useGameStore.getState().movePlayer(dx, dy);
-      } else {
-        const isWalking = useGameStore.getState().playerWalking;
-        if (isWalking) useGameStore.getState().stopPlayer();
-      }
-    }, 16);
-    return () => clearInterval(interval);
-  }, [gameEnding]);
+    const onSpace = (e) => {
+      if (e.code !== 'Space') return;
+      if (e.target.tagName === 'INPUT') return; // let input handle it
+      e.preventDefault();
+      const store = useGameStore.getState();
+      if (store.waitingForChat) return;
+      if (!store.interactionMessage?.includes('[SPACE]')) return;
 
-  // Canvas render loop - runs once
+      if (!audioStarted) { Audio.init(); Audio.startBGM(); setAudioStarted(true); }
+      Audio.sfx('blip');
+      store.interact();
+    };
+    const onH = (e) => {
+      if (e.code === 'KeyH') setShowLegend(v => !v);
+    };
+    window.addEventListener('keydown', onSpace);
+    window.addEventListener('keydown', onH);
+    return () => {
+      window.removeEventListener('keydown', onSpace);
+      window.removeEventListener('keydown', onH);
+    };
+  }, [audioStarted]);
+
+  // Movement and render game loop (runs every frame)
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
+
     const resize = () => {
       const p = canvas.parentElement;
       if (p) { canvas.width = p.clientWidth; canvas.height = p.clientHeight; }
     };
     resize();
     window.addEventListener('resize', resize);
-    const loop = () => {
+
+    let moveTimer = 0;
+
+    const tick = () => {
       frameRef.current++;
+      moveTimer++;
+
+      // Handle movement every 3 frames (~20 times/sec)
+      if (moveTimer % 2 === 0) {
+        const store = useGameStore.getState();
+        if (!store.gameEnding && !store.waitingForChat) {
+          let dx = 0, dy = 0;
+          if (keys['ArrowUp'] || keys['KeyW']) dy = -1;
+          if (keys['ArrowDown'] || keys['KeyS']) dy = 1;
+          if (keys['ArrowLeft'] || keys['KeyA']) dx = -1;
+          if (keys['ArrowRight'] || keys['KeyD']) dx = 1;
+          if (dx !== 0 || dy !== 0) {
+            store.movePlayer(dx, dy);
+          } else if (store.playerWalking) {
+            store.stopPlayer();
+          }
+        }
+      }
+
+      // Render
       if (ctx && canvas.width > 0 && canvas.height > 0) {
         const s = useGameStore.getState();
         const rd = getRoom(s.roomId);
         const npcs = [];
         if (rd) {
           if (rd.glazePos) {
-            const mm = { terrified: '#FF4466', nervous: '#FFAA44', pleased: '#44FF88', smug: '#00D4FF', frustrated: '#FF8855', suspicious: '#FF8855', triumphant: '#FF44FF', neutral: '#00D4FF' };
-            npcs.push({ type: 'glaze', worldX: rd.glazePos.x * 32 + 16, worldY: rd.glazePos.y * 32 + 16, mood: s.glazeExpression || 'neutral', moodColor: mm[s.glazeExpression] || '#00D4FF', seed: 1 });
+            const mm = { terrified: '#FF4466', nervous: '#FFAA44', pleased: '#44FF88', smug: '#44DDFF', frustrated: '#FF8855', suspicious: '#FF8855', triumphant: '#FF66FF', neutral: '#44DDFF' };
+            npcs.push({ type: 'glaze', worldX: rd.glazePos.x * 32 + 16, worldY: rd.glazePos.y * 32 + 16, mood: s.glazeExpression || 'neutral', moodColor: mm[s.glazeExpression] || '#44DDFF', seed: 1 });
           }
           if (rd.hasStray && rd.strayPos) npcs.push({ type: 'stray', worldX: rd.strayPos.x * 32 + 16, worldY: rd.strayPos.y * 32 + 16, awake: s.strayWoke, seed: 2 });
           if (rd.wormPos) npcs.push({ type: 'vermious', worldX: rd.wormPos.x * 32 + 16, worldY: rd.wormPos.y * 32 + 16, seed: 3 });
@@ -146,16 +149,24 @@ export function GameView() {
           nearRift: s.nearRift, nearWorm: s.nearWorm,
         }, npcs, objs, s.riftsIntensity, frameRef.current, s.strayWoke, s.gameEnding);
       }
-      animRef.current = requestAnimationFrame(loop);
+
+      animRef.current = requestAnimationFrame(tick);
     };
-    loop();
-    return () => { window.removeEventListener('resize', resize); if (animRef.current) cancelAnimationFrame(animRef.current); };
+
+    tick();
+
+    return () => {
+      window.removeEventListener('resize', resize);
+      if (animRef.current) cancelAnimationFrame(animRef.current);
+    };
   }, []);
 
+  // Chat auto-scroll
   useEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
   }, [messages]);
 
+  // Sound effects
   useEffect(() => {
     if (!audioStarted || !flashMessage) return;
     if (flashMessage.includes('CORE') || flashMessage.includes('SEALED') || flashMessage.includes('OPENED') || flashMessage.includes('PORTAL')) Audio.sfx('success');
@@ -220,28 +231,35 @@ export function GameView() {
       </div>
 
       <div className="game-canvas-wrap">
-        <canvas ref={canvasRef} className="game-canvas" />
+        <canvas ref={canvasRef} className="game-canvas" tabIndex={0} />
         <div className="objective-hud">{objLabel}</div>
         {interactionMessage && <div className="interact-hint">{interactionMessage}</div>}
         {flashMessage && <div className="flash-bar"><span>{flashMessage}</span></div>}
         <div className="controls-hint">
-          {waitingForChat ? 'TYPE BELOW + ENTER TO SEND' : 'WASD MOVE | SPACE INTERACT | H HELP'}
+          {waitingForChat ? 'TYPE BELOW + ENTER TO SEND' : 'ARROW KEYS OR WASD TO MOVE | SPACE TO INTERACT'}
         </div>
+
+        {/* Directional controls for clicking/tapping */}
+        <div className="dpad">
+          <button className="dpad-btn dpad-up" onMouseDown={() => { keys['ArrowUp'] = true; }} onMouseUp={() => { keys['ArrowUp'] = false; }} onTouchStart={() => { keys['ArrowUp'] = true; }} onTouchEnd={() => { keys['ArrowUp'] = false; }}>&#9650;</button>
+          <button className="dpad-btn dpad-down" onMouseDown={() => { keys['ArrowDown'] = true; }} onMouseUp={() => { keys['ArrowDown'] = false; }} onTouchStart={() => { keys['ArrowDown'] = true; }} onTouchEnd={() => { keys['ArrowDown'] = false; }}>&#9660;</button>
+          <button className="dpad-btn dpad-left" onMouseDown={() => { keys['ArrowLeft'] = true; }} onMouseUp={() => { keys['ArrowLeft'] = false; }} onTouchStart={() => { keys['ArrowLeft'] = true; }} onTouchEnd={() => { keys['ArrowLeft'] = false; }}>&#9664;</button>
+          <button className="dpad-btn dpad-right" onMouseDown={() => { keys['ArrowRight'] = true; }} onMouseUp={() => { keys['ArrowRight'] = false; }} onTouchStart={() => { keys['ArrowRight'] = true; }} onTouchEnd={() => { keys['ArrowRight'] = false; }}>&#9654;</button>
+        </div>
+
         {showLegend && (
           <div className="legend-overlay">
             <div className="legend-title">HOW TO PLAY</div>
-            <div className="legend-row"><span className="legend-key">W/A/S/D</span> MOVE</div>
-            <div className="legend-row"><span className="legend-key">SPACE</span> TALK TO GLAZE / USE OBJECT</div>
+            <div className="legend-row"><span className="legend-key">W/A/S/D</span> <span style={{color:'#FFCC44'}}>or</span> <span className="legend-key">ARROWS</span> MOVE</div>
+            <div className="legend-row"><span className="legend-key">SPACE</span> TALK TO GLAZE / USE</div>
             <div className="legend-row"><span className="legend-key">ENTER</span> SEND MESSAGE</div>
             <div className="legend-row"><span className="legend-key">H</span> TOGGLE HELP</div>
             <div className="legend-divider" />
-            <div className="legend-row">1. WALK UP TO <span className="legend-g">GLAZE</span></div>
-            <div className="legend-row">2. PRESS <span className="legend-key">SPACE</span></div>
-            <div className="legend-row">3. TYPE A MESSAGE, PRESS ENTER</div>
+            <div className="legend-row" style={{color:'#44FF88'}}>STEP 1: WALK TO GLAZE (green guy)</div>
+            <div className="legend-row" style={{color:'#44FF88'}}>STEP 2: PRESS SPACE NEAR HIM</div>
+            <div className="legend-row" style={{color:'#44FF88'}}>STEP 3: TYPE + ENTER</div>
             <div className="legend-divider" />
-            <div className="legend-row">PERSUASION STYLES:</div>
-            <div className="legend-small">COMMAND / FLATTER / BRIBE</div>
-            <div className="legend-small">REASSURE / ARGUE / THREATEN</div>
+            <div className="legend-row" style={{color:'#B8A8D8',fontSize:'6px'}}>TRY: COMMAND FLATTER BRIBE REASSURE</div>
           </div>
         )}
       </div>

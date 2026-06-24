@@ -62,11 +62,11 @@ export const useGameStore = create((set, get) => ({
 
   movePlayer: (dx, dy) => {
     const state = get();
-    if (state.gameEnding || state.waitingForChat) return;
+    if (state.gameEnding) return;
     const room = getRoom(state.roomId);
     if (!room) return;
-    const newX = state.playerX + dx * 2;
-    const newY = state.playerY + dy * 2;
+    const newX = state.playerX + dx * 2.5;
+    const newY = state.playerY + dy * 2.5;
     const tx = Math.floor(newX / 32);
     const ty = Math.floor(newY / 32);
     const tile = getTileAt(room, tx, ty);
