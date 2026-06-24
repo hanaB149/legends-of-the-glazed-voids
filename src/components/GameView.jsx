@@ -14,7 +14,6 @@ const SUGGESTIONS = {
     { text: 'Grab the Glaze Core', hint: 'COMMAND' },
     { text: 'There is a doughnut in it for you', hint: 'BRIBE' },
     { text: 'The cat is asleep. Quietly does it.', hint: 'REASSURE' },
-    { text: 'You are the Captain. Act like it.', hint: 'ARGUE' },
   ],
   maw: [
     { text: 'Seal the rift with a Glaze Core', hint: 'COMMAND' },
@@ -36,12 +35,18 @@ export function GameView() {
   const [audioStarted, setAudioStarted] = useState(false);
   const [showLegend, setShowLegend] = useState(true);
 
-  const room = store.roomId;
+  // Auto-focus input whenever waitingForChat becomes true
+  useEffect(() => {
+    if (store.waitingForChat && inputRef.current) {
+      inputRef.current.focus();
+    }
+  }, [store.waitingForChat]);
 
-  // Movement loop
+  // Movement loop (only when not chatting)
   useEffect(() => {
     if (store.gameEnding) return;
     const interval = setInterval(() => {
+      if (store.waitingForChat) return;
       const k = keysRef.current;
       let dx = 0, dy = 0;
       if (k['ArrowUp'] || k['KeyW']) dy = -1;
@@ -52,7 +57,7 @@ export function GameView() {
       else if (store.playerWalking) useGameStore.getState().stopPlayer();
     }, 16);
     return () => clearInterval(interval);
-  }, [store.gameEnding, store.playerWalking]);
+  }, [store.gameEnding, store.playerWalking, store.waitingForChat]);
 
   // Keyboard handlers
   useEffect(() => {
@@ -62,9 +67,11 @@ export function GameView() {
       if (e.code === 'Space') {
         e.preventDefault();
         if (!audioStarted) { Audio.init(); Audio.startBGM(); setAudioStarted(true); }
-        if (store.interactionMessage?.includes('[SPACE]')) { Audio.sfx('blip'); useGameStore.getState().interact(); }
+        if (store.interactionMessage?.includes('[SPACE]')) {
+          Audio.sfx('blip');
+          useGameStore.getState().interact();
+        }
       }
-      if (e.code === 'Enter' && store.interactionMessage?.includes('TYPE')) inputRef.current?.focus();
     };
     const handleKeyUp = (e) => { keysRef.current[e.code] = false; };
     window.addEventListener('keydown', handleKeyDown);
@@ -95,7 +102,12 @@ export function GameView() {
         }
         const objs = [];
         if (rd && rd.requiredAction?.id === 'grab_core' && rd.corePos && !s.roomCompleted) objs.push({ x: rd.corePos.x * 32, y: rd.corePos.y * 32 });
-        renderGame(ctx, canvas.width, canvas.height, rd || rd, { x: s.playerX, y: s.playerY, dir: s.playerDir, walking: s.playerWalking }, npcs, objs, s.riftsIntensity, frameRef.current, s.strayWoke, s.gameEnding);
+        renderGame(ctx, canvas.width, canvas.height, rd || rd, {
+          x: s.playerX, y: s.playerY, dir: s.playerDir, walking: s.playerWalking,
+          nearGlaze: s.nearGlaze, nearHatch: s.nearHatch, nearCore: s.nearCore,
+          nearRift: s.nearRift, nearWorm: s.nearWorm, nearDoor: s.nearDoor,
+          waitingForChat: s.waitingForChat,
+        }, npcs, objs, s.riftsIntensity, frameRef.current, s.strayWoke, s.gameEnding);
       }
       animRef.current = requestAnimationFrame(loop);
     };
@@ -109,7 +121,7 @@ export function GameView() {
     if (store.flashMessage.includes('CORE') || store.flashMessage.includes('SEALED') || store.flashMessage.includes('OPENED') || store.flashMessage.includes('PORTAL')) Audio.sfx('success');
     else if (store.flashMessage.includes('OBJECTION') || store.flashMessage.includes('REFUSED')) Audio.sfx('refuse');
     else if (store.flashMessage.includes('STRAY')) Audio.sfx('danger');
-    else if (store.flashMessage.includes('COUNTER')) Audio.sfx('bribe');
+    else if (store.flashMessage.includes('DEAL') || store.flashMessage.includes('COUNTER')) Audio.sfx('bribe');
   }, [store.flashMessage, audioStarted]);
   useEffect(() => {
     if (!audioStarted || !store.gameEnding) return;
@@ -133,57 +145,62 @@ export function GameView() {
   const handleRestart = () => { Audio.stopBGM(); setAudioStarted(false); store.startGame(); };
 
   const suggestions = SUGGESTIONS[store.roomId] || [];
-  const roomName = store.roomId === 'bridge' ? 'BRIDGE' : store.roomId === 'glazing_bay' ? 'GLAZING BAY' : 'THE MAW';
+  const roomData = getRoom(store.roomId);
+  const objLabel = store.roomCompleted
+    ? (store.roomId === 'bridge' ? 'GO TO THE HATCH (NORTH)' : store.roomId === 'glazing_bay' ? 'ENTER THE DOOR (EAST)' : '')
+    : (store.roomId === 'bridge' ? 'TALK TO GLAZE, GET HIM TO THE HATCH'
+      : store.roomId === 'glazing_bay' ? 'PERSUADE GLAZE TO GRAB A CORE'
+      : 'SEAL RIFT, THEN FEED WORM');
 
   return (
     <div className="game-view">
       <div className="hud-top">
         <div className="hud-left">
-          <span className="hud-room" style={{ color: '#00C8FF' }}>&#9670; {roomName}</span>
-          <span className="hud-desc">{getRoom(store.roomId)?.desc || ''}</span>
+          <span className="hud-room">{roomData?.name || ''}</span>
         </div>
         <div className="hud-center">
-          <span className="hud-core" style={{ color: '#00C8FF' }}>&#9679; CORES: {store.inventory.glazeCores}</span>
-          <span className="hud-cruller" style={{ color: '#44FF88' }}>&#9679; CRULLERS: {store.inventory.voidCrullers}</span>
+          <span className="hud-core">CORES: {store.inventory.glazeCores}</span>
+          <span className="hud-cruller">CRULLERS: {store.inventory.voidCrullers}</span>
+          <span className={`hud-hp ${store.ship.integrity < 30 ? 'low' : ''}`}>HP {Math.round(store.ship.integrity)}%</span>
         </div>
         <div className="hud-right">
-          <span className={`hud-hp ${store.ship.integrity < 30 ? 'low' : ''}`}>&#9829; {Math.round(store.ship.integrity)}%</span>
           {store.roomId === 'glazing_bay' && (
             <span className={`hud-stray ${store.strayWoke ? 'woke' : ''}`}>
               {store.strayWoke ? '! STRAY ACTIVE' : '~ STRAY DORMANT'}
             </span>
           )}
+          <span className="hud-mood">{store.glazeExpression.toUpperCase()}</span>
         </div>
       </div>
 
       <div className="game-canvas-wrap">
         <canvas ref={canvasRef} className="game-canvas" />
 
+        {/* Always show objective */}
+        <div className="objective-hud">{objLabel}</div>
+
         {store.interactionMessage && (
-          <div className="interact-hint">
-            <span className="interact-text">{store.interactionMessage}</span>
-          </div>
+          <div className="interact-hint">{store.interactionMessage}</div>
         )}
         {store.flashMessage && (
           <div className="flash-bar"><span>{store.flashMessage}</span></div>
         )}
         <div className="controls-hint">
-          WASD MOVE | SPACE INTERACT | H TOGGLE MAP | TYPE TO TALK
+          {store.waitingForChat ? 'TYPE BELOW + ENTER TO SEND' : 'WASD=MOVE SPACE=INTERACT H=HELP'}
         </div>
 
         {showLegend && (
           <div className="legend-overlay">
             <div className="legend-title">HOW TO PLAY</div>
             <div className="legend-row"><span className="legend-key">W/A/S/D</span> MOVE</div>
-            <div className="legend-row"><span className="legend-key">SPACE</span> INTERACT / TALK</div>
+            <div className="legend-row"><span className="legend-key">SPACE</span> INTERACT</div>
             <div className="legend-row"><span className="legend-key">ENTER</span> SEND MESSAGE</div>
-            <div className="legend-row"><span className="legend-key">H</span> TOGGLE THIS</div>
+            <div className="legend-row"><span className="legend-key">H</span> TOGGLE HELP</div>
             <div className="legend-divider" />
-            <div className="legend-row"><span className="legend-g">GLAZE</span> TALK TO HIM</div>
-            <div className="legend-row"><span className="legend-b">? ITEMS</span> INTERACT</div>
-            <div className="legend-row"><span className="legend-r">RIFTS</span> SEAL WITH CORE</div>
-            <div className="legend-small">TALK TO GLAZE USING ANY STYLE</div>
-            <div className="legend-small">COMMAND / FLATTER / BRIBE / REASSURE / ARGUE / THREATEN</div>
+            <div className="legend-row"><span className="legend-g">GLAZE</span> = TALK TO HIM</div>
+            <div className="legend-row">WALK UP TO HIM AND PRESS SPACE</div>
+            <div className="legend-row">THEN TYPE YOUR MESSAGE</div>
+            <div className="legend-small">TRY: COMMAND / FLATTER / BRIBE / REASSURE</div>
           </div>
         )}
       </div>
@@ -191,30 +208,27 @@ export function GameView() {
       <div className="bottom-panel">
         <div className="gauge-strip">
           <div className="gauge-item"><span className="g-label">TRUST</span><div className="g-bar"><div className="g-fill g-trust" style={{width:`${store.gauges.trust}%`}}/></div><span className="g-val">{store.gauges.trust}</span></div>
-          <div className="gauge-item"><span className="g-label">COMPOSE</span><div className="g-bar"><div className="g-fill g-comp" style={{width:`${store.gauges.composure}%`}}/></div><span className="g-val">{store.gauges.composure}</span></div>
+          <div className="gauge-item"><span className="g-label">COMP</span><div className="g-bar"><div className="g-fill g-comp" style={{width:`${store.gauges.composure}%`}}/></div><span className="g-val">{store.gauges.composure}</span></div>
           <div className="gauge-item"><span className="g-label">EGO</span><div className="g-bar"><div className="g-fill g-ego" style={{width:`${store.gauges.ego}%`}}/></div><span className="g-val">{store.gauges.ego}</span></div>
           <div className="gauge-item"><span className="g-label">HUNGER</span><div className="g-bar"><div className="g-fill g-hunger" style={{width:`${store.gauges.hunger}%`}}/></div><span className="g-val">{store.gauges.hunger}</span></div>
-          <div className="gauge-item gauge-mood">
-            <span className={`mood-badge mood-${store.glazeExpression}`}>{store.glazeExpression.toUpperCase()}</span>
-          </div>
-          {store.roomCompleted && store.roomId !== 'maw' && <div className="gauge-item"><span className="next-tag">READY FOR NEXT AREA {'>'}</span></div>}
           {!store.gameEnding && !store.roomCompleted && suggestions.length > 0 && (
             <div className="gauge-quick">
               {suggestions.map((s, i) => (
-                <button key={i} className="quick-chip" onClick={() => handleSuggestion(s.text)} disabled={store.isProcessing} title={s.hint}>
-                  {s.text.slice(0, 22)}
+                <button key={i} className="quick-chip" onClick={() => handleSuggestion(s.text)} disabled={store.isProcessing}>
+                  {s.hint}: {s.text.slice(0, 18)}
                 </button>
               ))}
             </div>
           )}
+          {store.roomCompleted && store.roomId !== 'maw' && <span className="next-tag">! MOVE TO EXIT</span>}
         </div>
 
         <div className="chat-area">
           <div className="chat-msgs" ref={scrollRef}>
-            {store.messages.slice(-6).map((msg, i) => (
+            {store.messages.slice(-5).map((msg, i) => (
               <div key={i} className={`chat-line chat-${msg.role}`}>
                 {msg.role === 'player' && <span className="player-pre">{'>'} </span>}
-                <span>{msg.text.length > 90 ? msg.text.slice(0, 90) + '...' : msg.text}</span>
+                <span>{msg.text.length > 95 ? msg.text.slice(0, 95) + '...' : msg.text}</span>
               </div>
             ))}
             {store.isProcessing && <div className="chat-line chat-glaze"><span className="dots"><span/><span/><span/></span></div>}
@@ -223,7 +237,7 @@ export function GameView() {
             <form className="chat-form" onSubmit={handleSubmit}>
               <span className="prompt">{'>'}</span>
               <input ref={inputRef} type="text" value={input} onChange={e => setInput(e.target.value)}
-                placeholder={store.interactionMessage?.includes('TYPE') ? 'TYPE MESSAGE...' : 'TYPE TO TALK TO GLAZE...'}
+                placeholder={store.waitingForChat ? 'TYPE YOUR MESSAGE...' : 'TYPE TO TALK (OR USE BUTTONS ABOVE)'}
                 disabled={store.isProcessing} autoFocus />
               <button type="submit" disabled={store.isProcessing || !input.trim()}>SEND</button>
             </form>

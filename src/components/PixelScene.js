@@ -105,6 +105,33 @@ export function renderGame(ctx, w, h, roomData, player, npcs, objects, riftsInte
     }
   }
 
+  // Interaction arrow over nearby interactable NPCs/objects
+  if (player.nearGlaze && roomData.glazePos) {
+    const ax = roomData.glazePos.x * TILE + TILE / 2 - camX;
+    const ay = roomData.glazePos.y * TILE - 16 - camY;
+    drawInteractionArrow(ctx, ax, ay, frame, '#44FF88');
+  }
+  if (player.nearHatch && roomData.hatchPos) {
+    const ax = roomData.hatchPos.x * TILE + TILE / 2 - camX;
+    const ay = roomData.hatchPos.y * TILE - 16 - camY;
+    drawInteractionArrow(ctx, ax, ay, frame, '#00C8FF');
+  }
+  if (player.nearCore && roomData.corePos) {
+    const ax = roomData.corePos.x * TILE + TILE / 2 - camX;
+    const ay = roomData.corePos.y * TILE - 12 - camY;
+    drawInteractionArrow(ctx, ax, ay, frame, '#00C8FF');
+  }
+  if (player.nearRift && roomData.riftPos) {
+    const ax = roomData.riftPos.x * TILE + TILE / 2 - camX;
+    const ay = roomData.riftPos.y * TILE - 12 - camY;
+    drawInteractionArrow(ctx, ax, ay, frame, '#FF00FF');
+  }
+  if (player.nearWorm && roomData.wormPos) {
+    const ax = roomData.wormPos.x * TILE + TILE / 2 - camX;
+    const ay = roomData.wormPos.y * TILE - 12 - camY;
+    drawInteractionArrow(ctx, ax, ay, frame, '#00FF88');
+  }
+
   // Scanlines light
   ctx.fillStyle = 'rgba(0,0,0,0.03)';
   for (let sy = 0; sy < h; sy += 3) {
@@ -731,5 +758,19 @@ function drawLabel(ctx, x, y, text, color, frame) {
   ctx.textAlign = 'center';
   ctx.fillText(text, x, y + 6);
   ctx.textAlign = 'left';
+  ctx.globalAlpha = 1;
+}
+
+function drawInteractionArrow(ctx, x, y, frame, color) {
+  const pulse = Math.sin(frame * 0.08) * 0.3 + 0.7;
+  ctx.fillStyle = color;
+  ctx.globalAlpha = pulse * 0.8;
+  // Downward arrow
+  ctx.beginPath();
+  ctx.moveTo(x, y);
+  ctx.lineTo(x - 5, y + 10);
+  ctx.lineTo(x + 5, y + 10);
+  ctx.closePath();
+  ctx.fill();
   ctx.globalAlpha = 1;
 }
